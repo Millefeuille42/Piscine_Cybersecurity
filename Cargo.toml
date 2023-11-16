@@ -1,0 +1,30 @@
+[package]
+name = "piscineCybersec"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "spider"
+path = "src/00_arachnida/00_spider/main.rs"
+
+[[bin]]
+name = "scorpion"
+path = "src/00_arachnida/01_scorpion/main.rs"
+
+[[bin]]
+name = "ft_otp"
+path = "src/01_ft_otp/main.rs"
+
+[dependencies]
+clap = { version = "4.4.8", features = [] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+scraper = "0.18.1"
+url = "2.4.1"
+log = "0.4.20"
+kamadak-exif = "0.5.5"
+chrono = "0.4.31"
+hex = "0.4.3"
+hmac = "0.12.1"
+sha2 = { version = "0.10.8", features = [] }
