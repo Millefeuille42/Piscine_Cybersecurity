@@ -4,9 +4,11 @@ use std::fs;
 use std::path::PathBuf;
 use clap::{Arg, Command};
 use hmac::{SimpleHmac, Mac};
-use sha2::Sha256;
+use sha1::Sha1;
+use base64::{Engine as _, engine::general_purpose};
+use chrono::Utc;
 
-type HmacSha256 = SimpleHmac<Sha256>;
+type HmacSha1 = SimpleHmac<Sha1>;
 
 #[derive(Debug)]
 struct KeyFormatError;
@@ -18,6 +20,30 @@ impl Display for KeyFormatError {
 	}
 }
 
+fn hotp(key: &[u8], counter: u64) -> u32 {
+	let mut hmac = HmacSha1::new_from_slice(key).expect(format!("Error: {KeyFormatError}").as_str());
+
+	let counter: [u8; 8] = counter.to_be_bytes();
+	hmac.update(&counter);
+
+	let result = hmac.finalize().into_bytes();
+	let offset = (result[result.len() - 1] & 0x0F) as usize;
+	let otp = ((u32::from(result[offset]) & 0x7F) << 24)
+		| ((u32::from(result[offset + 1]) & 0xFF) << 16)
+		| ((u32::from(result[offset + 2]) & 0xFF) << 8)
+		| (u32::from(result[offset + 3]) & 0xFF);
+
+	otp % 10u32.pow(6u32)
+}
+
+fn totp(k: &[u8], t: u64) -> u32 {
+	let utc_now = Utc::now();
+
+	let s_since_epoch = utc_now.timestamp() as u64;
+
+	let time_steps = s_since_epoch / t;
+	hotp(k, time_steps)
+}
 
 fn main() {
 	let matches = Command::new("00_spider")
@@ -38,23 +64,20 @@ fn main() {
 		.get_matches();
 
 	if let Some(keyfile) = matches.get_one::<PathBuf>("generate") {
-		let key = fs::read_to_string(keyfile).expect("Error: Unable to open file");
+		let key = fs::read_to_string(keyfile).expect("Error: Unable to open key file");
 		if key.len() != 64 {eprintln!("Error: {KeyFormatError}"); return;}
-		let key = hex::decode(key).expect(format!("Error: {KeyFormatError}").as_str());
+		let hex_key = hex::decode(key.clone()).expect(format!("Error: {KeyFormatError}").as_str());
+		let hex_key_encoded = general_purpose::STANDARD.encode(&hex_key);
 
-		let mut mac = HmacSha256::new_from_slice(&key).expect("Error: Unable to use key");
-		mac.update(b"\0");
-		let result = mac.finalize();
-		let result = result.into_bytes();
-		let result = result.as_slice();
-		let result = hex::encode(result);
-		println!("{}", result.len());
-
+		fs::write("./ft_otp.key", hex_key_encoded).expect("Error: Unable to write key");
 		return;
 	}
 
 	if let Some(keyfile) = matches.get_one::<PathBuf>("key") {
-		println!("{}", keyfile.to_str().unwrap());
+		let key_encoded = fs::read_to_string(keyfile).expect("Error: Unable to open key file");
+		let key = general_purpose::STANDARD.decode(key_encoded).expect("Error: corrupted key");
+		let totp_val = totp(&key, 30);
+		println!("{:0>6}", totp_val);
 		return;
 	}
 }
