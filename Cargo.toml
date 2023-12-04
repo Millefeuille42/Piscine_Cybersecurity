@@ -17,6 +17,10 @@ path = "src/00_arachnida/01_scorpion/main.rs"
 name = "ft_otp"
 path = "src/01_ft_otp/main.rs"
 
+[[bin]]
+name = "stockholm"
+path = "src/04_stockholm/main.rs"
+
 [dependencies]
 clap = { version = "4.4.8", features = [] }
 reqwest = { version = "0.11", features = ["blocking", "json"] }
@@ -30,3 +34,10 @@ sha2 = "0.10.8"
 hmac = "0.12.1"
 sha1 = "0.10.6"
 base64 = "0.21.5"
+libaes = "0.7.0"
+uuid = "1.6.1"
+whoami = "1.4.1"
+time = "0.3.30"
+hostname = "0.3.1"
+cipher = { version = "0.4.4", features = [] }
+matches = { version = "0.1.10", features = [] }
