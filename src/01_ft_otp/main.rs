@@ -46,7 +46,7 @@ fn totp(k: &[u8], t: u64) -> u32 {
 }
 
 fn main() {
-	let matches = Command::new("00_spider")
+	let matches = Command::new("ft_otp")
 		.arg(Arg::new("generate")
 			.short('g')
 			.exclusive(true)
