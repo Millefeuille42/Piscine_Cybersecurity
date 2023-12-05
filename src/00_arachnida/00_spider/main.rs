@@ -4,7 +4,6 @@ use reqwest::blocking::Client;
 use std::path::PathBuf;
 use std::fs;
 
-
 fn download_image(url: &str, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
     let response = Client::new().get(url).send()?;
     let content = response.bytes()?;

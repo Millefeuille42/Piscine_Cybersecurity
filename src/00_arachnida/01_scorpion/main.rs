@@ -2,7 +2,6 @@ use std::env;
 use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use std::process::exit;
-use exif;
 use chrono::prelude::*;
 
 fn main() {
@@ -38,14 +37,11 @@ fn main() {
 
 		let mut bufreader = std::io::BufReader::new(&file);
 		let exif_reader = exif::Reader::new();
-		match exif_reader.read_from_container(&mut bufreader) {
-			Ok(exif) => {
-				for f in exif.fields() {
-					println!("	{} {} {}",
-							 f.tag, f.ifd_num, f.display_value().with_unit(&exif));
-				}
-			}
-			Err(_) => {}//eprintln!("Error: {}: {e}", path.to_str().unwrap())
-		}
+		if let Ok(exif) = exif_reader.read_from_container(&mut bufreader) {
+  				for f in exif.fields() {
+  					println!("	{} {} {}",
+  							 f.tag, f.ifd_num, f.display_value().with_unit(&exif));
+  				}
+  			}
 	}
 }
