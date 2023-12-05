@@ -33,3 +33,16 @@ Then run Stockholm with `./stockholm`. To decipher the target folder, run Stockh
 ## Note
 This program will only cipher a definite list of extensions. This list can be found
 in the `src/constants.rs` source file at line 4.
+
+## Improvements
+- Reduce entropy of ciphered files
+  - Add custom header
+  - Introduce plaintext data among the ciphered data
+  - Convert file to image and encode ciphered data with steganography
+  - Add lossless compression to the file
+- Improve strength of the ciphering
+  - XOR Key Whitening
+  - PKCS padding
+- Offload ciphering to a remote server / worker
+- Securely send key to remote server
+- Create a readme file on how to reverse the operation
