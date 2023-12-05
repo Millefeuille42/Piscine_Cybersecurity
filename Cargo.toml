@@ -41,3 +41,4 @@ time = "0.3.30"
 hostname = "0.3.1"
 cipher = { version = "0.4.4", features = [] }
 matches = { version = "0.1.10", features = [] }
+expanduser = "1.2.2"

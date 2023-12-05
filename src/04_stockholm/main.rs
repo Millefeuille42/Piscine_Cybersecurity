@@ -9,6 +9,7 @@ use std::{fs, str};
 use std::path::{PathBuf};
 use std::process::exit;
 use base64::{Engine as _, engine::general_purpose};
+use expanduser::expanduser;
 
 fn cipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
 	let file_iv = utils::generate_file_iv(key_encoded.as_str(), file_path)?;
@@ -69,9 +70,15 @@ fn cipher_command(silent: bool) {
 		return;
 	}
 
+	let target_folder = expanduser(constants::TARGET_FOLDER);
+	if let Err(err) = target_folder {
+		eprintln!("Error: can't expand target folder path: {err}");
+		return;
+	}
+	let target_folder = target_folder.unwrap().to_string_lossy().to_string();
 	let cipher = Cipher::new_256(&key);
-	if let Err(err) = cipher_folder(&cipher, &key_encoded, constants::TARGET_FOLDER, silent) {
-		eprintln!("Error: can't cipher target folder '{}': {err}", constants::TARGET_FOLDER)
+	if let Err(err) = cipher_folder(&cipher, &key_encoded, target_folder.as_str(), silent) {
+		eprintln!("Error: can't cipher target folder '{}': {err}", target_folder)
 	}
 }
 
@@ -137,8 +144,14 @@ fn decipher_command(key_file: &PathBuf, silent: bool) {
 	}
 	let key = key.unwrap();
 	let cipher = Cipher::new_256(&key);
-	if let Err(err) = decipher_folder(&cipher, &key_encoded, constants::TARGET_FOLDER, silent) {
-		eprintln!("Error: can't decipher target folder '{}': {err}", constants::TARGET_FOLDER)
+	let target_folder = expanduser(constants::TARGET_FOLDER);
+	if let Err(err) = target_folder {
+		eprintln!("Error: can't expand target folder path: {err}");
+		return;
+	}
+	let target_folder = target_folder.unwrap().to_string_lossy().to_string();
+	if let Err(err) = decipher_folder(&cipher, &key_encoded, target_folder.as_str(), silent) {
+		eprintln!("Error: can't decipher target folder '{}': {err}", target_folder)
 	}}
 
 fn main() {
