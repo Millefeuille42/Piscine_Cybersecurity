@@ -3,6 +3,7 @@ use libaes::Cipher;
 use std::{fs, str};
 use std::array::TryFromSliceError;
 use std::fmt;
+use std::path::{PathBuf};
 use std::process::exit;
 use std::time::{SystemTime, UNIX_EPOCH};
 use sha2::{Sha256, Digest};
@@ -201,8 +202,8 @@ enum StockholmError {
 	RenameFile(String),
 	ReadFile(String),
 	ReadDir(String),
-	Utf8DecodeCipheredFile(String),
-	Base64DecodeCipheredFile(String),
+	Utf8Decode(String),
+	Base64Decode(String),
 }
 
 impl fmt::Display for StockholmError {
@@ -215,14 +216,19 @@ impl fmt::Display for StockholmError {
 			StockholmError::RenameFile(details) => write!(f, "unable to rename file: {}", details),
 			StockholmError::ReadFile(details) => write!(f, "unable to read file: {}", details),
 			StockholmError::ReadDir(details) => write!(f, "unable to read directory: {}", details),
-			StockholmError::Utf8DecodeCipheredFile(details) => write!(f, "unable to decode file (utf8): {}", details),
-			StockholmError::Base64DecodeCipheredFile(details) => write!(f, "unable to decode file (base64): {}", details),
+			StockholmError::Utf8Decode(details) => write!(f, "unable to decode (utf8), this is often due to a wrong key: {}", details),
+			StockholmError::Base64Decode(details) => write!(f, "unable to decode (base64), file or key might be corrupted or invalid: {}", details),
 		}
 	}
 }
 
-fn decode_key(key: &String) -> Result<[u8;32], StockholmError> {
-	let key = general_purpose::STANDARD.decode(key).expect("Error: corrupted key");
+fn read_key(key_file: &PathBuf) -> Result<String, StockholmError> {
+	let key = fs::read(key_file).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
+	String::from_utf8(key).map_err(|err| StockholmError::Utf8Decode(err.to_string()))
+}
+
+fn decode_key(key_encoded: String) -> Result<[u8;32], StockholmError> {
+	let key = general_purpose::STANDARD.decode(key_encoded).map_err(|err| StockholmError::Base64Decode(err.to_string()))?;
 	key[0..32].try_into().map_err(|err: TryFromSliceError| StockholmError::ExtractKey(err.to_string()))
 }
 
@@ -257,9 +263,9 @@ fn cipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result
 fn decipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
 	let file_iv = generate_file_iv(key_encoded, file_path)?;
 	let file_data = fs::read(file_path).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
-	let file_data = general_purpose::STANDARD.decode(&file_data).map_err(|err| StockholmError::Base64DecodeCipheredFile(err.to_string()))?;
+	let file_data = general_purpose::STANDARD.decode(&file_data).map_err(|err| StockholmError::Base64Decode(err.to_string()))?;
 	let file_data = cipher.cbc_decrypt(file_iv.as_slice(), &file_data);
-	let file_data = String::from_utf8(file_data).map_err(|err| StockholmError::Utf8DecodeCipheredFile(err.to_string()))?;
+	let file_data = String::from_utf8(file_data).map_err(|err| StockholmError::Utf8Decode(err.to_string()))?;
 	let new_file_name = file_path.trim_end_matches(".ft");
 	fs::write(file_path, file_data).map_err(|err| StockholmError::WriteFile(err.to_string()))?;
 	fs::rename(file_path, new_file_name).map_err(|err| StockholmError::RenameFile(err.to_string()))?;
@@ -287,8 +293,11 @@ fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silen
 			}
 			continue;
 		}
-		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default();
-		if !TARGET_EXTENSIONS.contains(&extension) { continue };
+		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default().to_lowercase();
+		if !TARGET_EXTENSIONS.contains(&extension.as_str()) {
+			if !silent { println!("Skipping: '{path_string}' (extension not supported)") }
+			continue
+		};
 		if let Err(err) = cipher_file(&cipher, &key_encoded, path_string.as_str()) {
 			eprintln!("Error: can't cipher '{path_string}': {err}", );
 			continue;
@@ -320,8 +329,11 @@ fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, sil
 			}
 			continue;
 		}
-		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default();
-		if !TARGET_EXTENSIONS.contains(&extension) { continue };
+		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default().to_lowercase();
+		if extension != "ft" {
+			if !silent { println!("Skipping: '{path_string}' (not ciphered)") }
+			continue
+		};
 		if let Err(err) = decipher_file(&cipher, &key_encoded, path_string.as_str()) {
 			eprintln!("Error: can't decipher '{path_string}': {err}", );
 			continue;
@@ -346,19 +358,28 @@ fn cipher_command(silent: bool) {
 	}
 
 	let cipher = Cipher::new_256(&key);
-	let _ = cipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent);
+	if let Err(err) = cipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent) {
+		eprintln!("Error: can't cipher target folder '{TARGET_FOLDER}': {err}")
+	}
 }
 
-fn decipher_command(key_encoded: &String, silent: bool) {
-	let key = decode_key(key_encoded);
+fn decipher_command(key_file: &PathBuf, silent: bool) {
+	let key_encoded = read_key(key_file);
+	if let Err(err) = key_encoded {
+		eprintln!("An error occurred while reading key: {err}");
+		return;
+	}
+	let key_encoded = key_encoded.unwrap();
+	let key = decode_key(key_encoded.clone());
 	if let Err(err) = key {
 		eprintln!("An error occurred while decoding key: {err}");
 		return;
 	}
 	let key = key.unwrap();
 	let cipher = Cipher::new_256(&key);
-	let _ = decipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent);
-}
+	if let Err(err) = decipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent) {
+		eprintln!("Error: can't decipher target folder '{TARGET_FOLDER}': {err}")
+	}}
 
 fn main() {
 	let matches = Command::new("stockholm")
@@ -376,8 +397,7 @@ fn main() {
 		.arg(Arg::new("reverse")
 			.short('r')
 			.long("reverse")
-			.exclusive(true)
-			.value_parser(clap::value_parser!(String))
+			.value_parser(clap::value_parser!(PathBuf))
 			.value_name("KEY")
 			.help("decrypts the target folder"))
 		.get_matches();
@@ -386,7 +406,7 @@ fn main() {
 		println!("stockholm {VERSION}");
 	}
 
-	if let Some(key) = matches.get_one::<String>("reverse") {
+	if let Some(key) = matches.get_one::<PathBuf>("reverse") {
 		decipher_command(key, matches.get_flag("silent"));
 		exit(0);
 	}
