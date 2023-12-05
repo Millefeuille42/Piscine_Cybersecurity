@@ -53,18 +53,18 @@ fn main() {
 			.required(true)
 			.value_parser(clap::value_parser!(PathBuf))
 			.value_name("KEY_FILE")
-			.help("Generate keyfile based on a hexadecimal key"))
+			.help("Generate key file based on a hexadecimal key"))
 		.arg(Arg::new("key")
 			.short('k')
 			.value_name("KEY_FILE")
 			.exclusive(true)
 			.required(true)
 			.value_parser(clap::value_parser!(PathBuf))
-			.help("Get OTP based on provided keyfile"))
+			.help("Get OTP based on provided key file"))
 		.get_matches();
 
-	if let Some(keyfile) = matches.get_one::<PathBuf>("generate") {
-		let key = fs::read_to_string(keyfile).expect("Error: Unable to open key file");
+	if let Some(key_file) = matches.get_one::<PathBuf>("generate") {
+		let key = fs::read_to_string(key_file).expect("Error: Unable to open key file");
 		if key.len() != 64 {eprintln!("Error: {KeyFormatError}"); return;}
 		let hex_key = hex::decode(key.clone()).expect(format!("Error: {KeyFormatError}").as_str());
 		let hex_key_encoded = general_purpose::STANDARD.encode(&hex_key);
@@ -73,8 +73,8 @@ fn main() {
 		return;
 	}
 
-	if let Some(keyfile) = matches.get_one::<PathBuf>("key") {
-		let key_encoded = fs::read_to_string(keyfile).expect("Error: Unable to open key file");
+	if let Some(key_file) = matches.get_one::<PathBuf>("key") {
+		let key_encoded = fs::read_to_string(key_file).expect("Error: Unable to open key file");
 		let key = general_purpose::STANDARD.decode(key_encoded).expect("Error: corrupted key");
 		let totp_val = totp(&key, 30);
 		println!("{:0>6}", totp_val);

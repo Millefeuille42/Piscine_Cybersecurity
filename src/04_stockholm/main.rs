@@ -143,7 +143,6 @@ fn decipher_command(key_file: &PathBuf, silent: bool) {
 
 fn main() {
 	let matches = Command::new("stockholm")
-		.about("encrypts the target folder")
 		.arg(Arg::new("version")
 			.short('v')
 			.long("version")
@@ -153,12 +152,12 @@ fn main() {
 			.short('s')
 			.long("silent")
 			.action(ArgAction::SetTrue)
-			.help("do not print encrypted file names"))
+			.help("do not print ciphering/deciphering logs (still prints errors)"))
 		.arg(Arg::new("reverse")
 			.short('r')
 			.long("reverse")
 			.value_parser(clap::value_parser!(PathBuf))
-			.value_name("KEY")
+			.value_name("KEY FILE")
 			.help("decrypts the target folder"))
 		.get_matches();
 
