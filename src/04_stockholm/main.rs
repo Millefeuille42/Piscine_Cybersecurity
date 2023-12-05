@@ -11,17 +11,17 @@ use std::process::exit;
 use base64::{Engine as _, engine::general_purpose};
 use expanduser::expanduser;
 
-fn cipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
+fn cipher_file(cipher: &Cipher, key_encoded: String, file_path: &str) -> Result<[u8;16], StockholmError> {
 	let file_iv = utils::generate_file_iv(key_encoded.as_str(), file_path)?;
 	let file_data = fs::read(file_path).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
 	let file_ciphered = cipher.cbc_encrypt(&file_iv, file_data.as_slice());
-	let file_encoded = general_purpose::STANDARD.encode(&file_ciphered);
+	let file_encoded = general_purpose::STANDARD.encode(file_ciphered);
 	fs::write(file_path, file_encoded).map_err(|err| StockholmError::WriteFile(err.to_string()))?;
 	fs::rename(file_path, format!("{file_path}.ft")).map_err(|err| StockholmError::RenameFile(err.to_string()))?;
 	Ok(file_iv)
 }
 
-fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
+fn cipher_folder(cipher: &Cipher, key_encoded: String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
 	let paths = fs::read_dir(folder_path).map_err(|err| StockholmError::ReadDir(err.to_string()))?;
 
 	for path in paths {
@@ -37,7 +37,7 @@ fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silen
 			continue;
 		}
 		if file_metadata.unwrap().is_dir() {
-			if let Err(err) = cipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent) {
+			if let Err(err) = cipher_folder(cipher, key_encoded.clone(), path.to_str().unwrap(), silent) {
 				eprintln!("Error: can't read dir '{folder_path}': {err}");
 			}
 			continue;
@@ -47,7 +47,7 @@ fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silen
 			if !silent { println!("Skipping: '{path_string}' (extension not supported)") }
 			continue
 		};
-		if let Err(err) = cipher_file(&cipher, &key_encoded, path_string.as_str()) {
+		if let Err(err) = cipher_file(cipher, key_encoded.clone(), path_string.as_str()) {
 			eprintln!("Error: can't cipher '{path_string}': {err}", );
 			continue;
 		}
@@ -64,7 +64,7 @@ fn cipher_command(silent: bool) {
 		return;
 	}
 	let key = key.unwrap();
-	let key_encoded = general_purpose::STANDARD.encode(&key);
+	let key_encoded = general_purpose::STANDARD.encode(key);
 	if let Err(err) = fs::write(constants::KEY_FILE, key_encoded.clone()) {
 		eprintln!("An error occurred while writing key: {err}");
 		return;
@@ -77,15 +77,15 @@ fn cipher_command(silent: bool) {
 	}
 	let target_folder = target_folder.unwrap().to_string_lossy().to_string();
 	let cipher = Cipher::new_256(&key);
-	if let Err(err) = cipher_folder(&cipher, &key_encoded, target_folder.as_str(), silent) {
+	if let Err(err) = cipher_folder(&cipher, key_encoded, target_folder.as_str(), silent) {
 		eprintln!("Error: can't cipher target folder '{}': {err}", target_folder)
 	}
 }
 
-fn decipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
-	let file_iv = utils::generate_file_iv(key_encoded, file_path)?;
+fn decipher_file(cipher: &Cipher, key_encoded: String, file_path: &str) -> Result<[u8;16], StockholmError> {
+	let file_iv = utils::generate_file_iv(key_encoded.as_str(), file_path)?;
 	let file_data = fs::read(file_path).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
-	let file_data = general_purpose::STANDARD.decode(&file_data).map_err(|err| StockholmError::Base64Decode(err.to_string()))?;
+	let file_data = general_purpose::STANDARD.decode(file_data).map_err(|err| StockholmError::Base64Decode(err.to_string()))?;
 	let file_data = cipher.cbc_decrypt(file_iv.as_slice(), &file_data);
 	let file_data = String::from_utf8(file_data).map_err(|err| StockholmError::Utf8Decode(err.to_string()))?;
 	let new_file_name = file_path.trim_end_matches(".ft");
@@ -94,7 +94,7 @@ fn decipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Resu
 	Ok(file_iv)
 }
 
-fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
+fn decipher_folder(cipher: &Cipher, key_encoded: String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
 	let paths = fs::read_dir(folder_path).map_err(|err| StockholmError::ReadDir(err.to_string()))?;
 
 	for path in paths {
@@ -110,7 +110,7 @@ fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, sil
 			continue;
 		}
 		if file_metadata.unwrap().is_dir() {
-			if let Err(err) = decipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent) {
+			if let Err(err) = decipher_folder(cipher, key_encoded.clone(), path.to_str().unwrap(), silent) {
 				eprintln!("Error: can't read dir '{folder_path}': {err}");
 			}
 			continue;
@@ -120,7 +120,7 @@ fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, sil
 			if !silent { println!("Skipping: '{path_string}' (not ciphered)") }
 			continue
 		};
-		if let Err(err) = decipher_file(&cipher, &key_encoded, path_string.as_str()) {
+		if let Err(err) = decipher_file(cipher, key_encoded.clone(), path_string.as_str()) {
 			eprintln!("Error: can't decipher '{path_string}': {err}", );
 			continue;
 		}
@@ -150,7 +150,7 @@ fn decipher_command(key_file: &PathBuf, silent: bool) {
 		return;
 	}
 	let target_folder = target_folder.unwrap().to_string_lossy().to_string();
-	if let Err(err) = decipher_folder(&cipher, &key_encoded, target_folder.as_str(), silent) {
+	if let Err(err) = decipher_folder(&cipher, key_encoded, target_folder.as_str(), silent) {
 		eprintln!("Error: can't decipher target folder '{}': {err}", target_folder)
 	}}
 

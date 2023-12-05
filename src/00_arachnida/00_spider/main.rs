@@ -3,7 +3,7 @@ use url::Url;
 use reqwest::blocking::Client;
 use std::path::PathBuf;
 use std::fs;
-use scraper;
+
 
 fn download_image(url: &str, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
     let response = Client::new().get(url).send()?;
@@ -21,7 +21,7 @@ fn crawl(url: &str, depth: u32, current_depth: u32, save_path: &PathBuf, visited
     println!("<{current_depth}> - Crawling {url}");
 
     let response = Client::new().get(url).send();
-    if let Err(_) = response {
+    if response.is_err() {
         eprintln!("    Invalid URL {url}");
         return Ok(());
     }
@@ -29,7 +29,7 @@ fn crawl(url: &str, depth: u32, current_depth: u32, save_path: &PathBuf, visited
     let body = response.text()?;
     let base_url: Url = Url::parse(url)?;
     let base_domain = base_url.domain();
-    if let None = base_domain {
+    if base_domain.is_none() {
         eprintln!("No domain in URL");
         return Ok(());
     }
@@ -50,11 +50,11 @@ fn crawl(url: &str, depth: u32, current_depth: u32, save_path: &PathBuf, visited
                 && !file_path.ends_with(".jpeg")
                 && !file_path.ends_with(".jpg") { continue }
             let file_path = save_path.join(file_path);
-            if let Err(_) = file_path.metadata() {
-                if let Err(e) =  download_image(
-                    &img_url.to_string(),
+            if file_path.metadata().is_err() {
+                download_image(
+                    img_url.as_ref(),
                     file_path.to_str().unwrap()
-                ) { return Err(e); }
+                )?
             }
         }
     }
@@ -67,14 +67,14 @@ fn crawl(url: &str, depth: u32, current_depth: u32, save_path: &PathBuf, visited
             let mut new_url = "".to_string();
             if href.starts_with("http") {
                 let url_href = Url::parse(href);
-                if let Err(_) = url_href { continue; }
+                if url_href.is_err() { continue; }
                 if let Some(domain_href) = url_href.unwrap().domain() {
                     if base_domain == domain_href {
                         new_url = href.to_string();
                     }
                 } else { continue; }
             } else {
-                if href.starts_with("#") { continue; }
+                if href.starts_with('#') { continue; }
                 let _new_url = base_url.join(href)?;
                 new_url = _new_url.to_string();
             }

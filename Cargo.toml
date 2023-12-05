@@ -21,6 +21,10 @@ path = "src/01_ft_otp/main.rs"
 name = "stockholm"
 path = "src/04_stockholm/main.rs"
 
+[[bin]]
+name = "irondome"
+path = "src/05_irondome/main.rs"
+
 [dependencies]
 clap = { version = "4.4.8", features = [] }
 reqwest = { version = "0.11", features = ["blocking", "json"] }

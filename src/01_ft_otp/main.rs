@@ -21,7 +21,7 @@ impl Display for KeyFormatError {
 }
 
 fn hotp(key: &[u8], counter: u64) -> u32 {
-	let mut hmac = HmacSha1::new_from_slice(key).expect(format!("Error: {KeyFormatError}").as_str());
+	let mut hmac = HmacSha1::new_from_slice(key).unwrap_or_else(|_| panic!("Error: {KeyFormatError}"));
 
 	let counter: [u8; 8] = counter.to_be_bytes();
 	hmac.update(&counter);
@@ -66,8 +66,8 @@ fn main() {
 	if let Some(key_file) = matches.get_one::<PathBuf>("generate") {
 		let key = fs::read_to_string(key_file).expect("Error: Unable to open key file");
 		if key.len() != 64 {eprintln!("Error: {KeyFormatError}"); return;}
-		let hex_key = hex::decode(key.clone()).expect(format!("Error: {KeyFormatError}").as_str());
-		let hex_key_encoded = general_purpose::STANDARD.encode(&hex_key);
+		let hex_key = hex::decode(key).unwrap_or_else(|_| panic!("Error: {KeyFormatError}"));
+		let hex_key_encoded = general_purpose::STANDARD.encode(hex_key);
 
 		fs::write("./ft_otp.key", hex_key_encoded).expect("Error: Unable to write key");
 		return;
@@ -78,6 +78,5 @@ fn main() {
 		let key = general_purpose::STANDARD.decode(key_encoded).expect("Error: corrupted key");
 		let totp_val = totp(&key, 30);
 		println!("{:0>6}", totp_val);
-		return;
 	}
 }
