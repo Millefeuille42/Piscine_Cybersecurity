@@ -47,4 +47,8 @@ cipher = { version = "0.4.4", features = [] }
 matches = { version = "0.1.10", features = [] }
 expanduser = "1.2.2"
 rlimit = "0.10.1"
-nix = { version = "0.27.1", features = ["user"] }
+libc = "0.2.150"
+nix = { version = "0.27.1", features = ["user", "ioctl", "resource"] }
+sysinfo = "0.29.11"
+inotify = "0.10.2"
+entropy = "0.4.2"
