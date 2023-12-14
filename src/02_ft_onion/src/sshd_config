@@ -4,10 +4,10 @@ LogLevel INFO
 LoginGraceTime 2m
 PermitRootLogin no
 MaxAuthTries 3
-PubkeyAuthentication yes
+PubkeyAuthentication no
 AuthorizedKeysFile	.ssh/authorized_keys
 
-PasswordAuthentication no
+PasswordAuthentication yes
 PermitEmptyPasswords no
 
 AllowTcpForwarding no
