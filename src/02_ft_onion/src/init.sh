@@ -2,9 +2,10 @@
 
 cp -n /default/torrc /etc/tor/torrc
 cp -n /default/nginx.conf /etc/nginx/nginx.conf
+cp -n /default/sshd_config /etc/ssh/sshd_config
 cp -n /default/index.html /var/tor/lib/hidden/webserv/index.html
 
-nginx -g "daemon off;" &
+nginx &
 PID1=$!
 tor &
 PID2=$!

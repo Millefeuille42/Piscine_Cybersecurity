@@ -1,0 +1,18 @@
+Port 4242
+LogLevel INFO
+
+LoginGraceTime 2m
+PermitRootLogin no
+MaxAuthTries 3
+PubkeyAuthentication yes
+AuthorizedKeysFile	.ssh/authorized_keys
+
+PasswordAuthentication no
+PermitEmptyPasswords no
+
+AllowTcpForwarding no
+GatewayPorts no
+X11Forwarding no
+PrintMotd no
+PermitUserEnvironment no
+Subsystem	sftp	internal-sftp

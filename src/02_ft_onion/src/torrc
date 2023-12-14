@@ -1,5 +1,7 @@
 ##=================== /etc/torrc =====================##
 # https://www.torproject.org/docs/tor-manual.html.en
+
+User tord
 DataDirectory /var/tor/lib
 
 Log notice file /var/tor/log/notices.log
@@ -18,4 +20,4 @@ CookieAuthentication 1
 
 HiddenServiceDir /var/tor/lib/hidden/webserv/
 HiddenServicePort 80 127.0.0.1:80
-HiddenServicePort 4242 127.0.0.1:22
+HiddenServicePort 4242 127.0.0.1:4242
